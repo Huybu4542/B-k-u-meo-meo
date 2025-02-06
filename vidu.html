@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Con Bò Kêu Meo Meo</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #toggleSoundButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <button id="toggleSoundButton">Bật âm thanh</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // Khởi tạo Scene, Camera, Renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Bầu trời xanh
+        scene.fog = new THREE.Fog(0x87CEEB, 5, 15);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Ánh sáng động
+        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        light.position.set(5, 5, 5);
+        light.castShadow = true;
+        scene.add(light);
+        const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+        scene.add(ambientLight);
+
+        // Mặt đất
+        const groundGeometry = new THREE.PlaneGeometry(20, 20);
+        const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -1.1;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Hệ thống âm thanh
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        const sound = new THREE.Audio(listener);
+        const audioLoader = new THREE.AudioLoader();
+        let isSoundPlaying = false;
+        audioLoader.load('cow.mp3', function(buffer) {
+            sound.setBuffer(buffer);
+            sound.setLoop(true);
+            sound.setVolume(0.5);
+        });
+
+        // Âm thanh khi bấm vào con bò (Meo Meo)
+        const meowSound = new THREE.Audio(listener);
+        audioLoader.load('meow.wav', function(buffer) {
+            meowSound.setBuffer(buffer);
+            meowSound.setVolume(1.0);
+        });
+
+        // Biến lưu mô hình bò
+        let cow;
+        let rotationSpeed = 0.005;
+        let maxSpeed = 0.05;
+        let acceleration = 0.0005;
+        let bounceSpeed = 0; 
+        let bounceDirection = 1; 
+        let jumpBoost = false;
+        let normalJumpHeight = 0.002;
+        let boostedJumpHeight = 0.01;
+        let bounceHeight = normalJumpHeight;
+
+        // Tải mô hình bò
+        const loader = new THREE.GLTFLoader();
+        loader.load('cow.glb', function(gltf) {
+            cow = gltf.scene;
+            cow.scale.set(0.5, 0.5, 0.5);
+            cow.position.y = -1;
+            cow.traverse((node) => {
+                if (node.isMesh) node.castShadow = true;
+            });
+            scene.add(cow);
+        });
+
+        camera.position.set(0, 1, 5);
+
+        // Hàm animate (xoay + nhún nhảy)
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (cow) {
+                cow.rotation.y += rotationSpeed;
+                if (rotationSpeed < maxSpeed) rotationSpeed += acceleration;
+
+                // Hiệu ứng nhún nhảy
+                bounceSpeed += bounceHeight * bounceDirection;
+                cow.position.y += bounceSpeed;
+                if (Math.abs(bounceSpeed) > 0.02) bounceDirection *= -1;
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Xử lý thay đổi kích thước màn hình
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+        // Xử lý nút bật/tắt âm thanh
+        document.getElementById("toggleSoundButton").addEventListener("click", function() {
+            if (isSoundPlaying) {
+                sound.stop();
+                this.textContent = "Bật âm thanh";
+            } else {
+                sound.play();
+                this.textContent = "Tắt âm thanh";
+            }
+            isSoundPlaying = !isSoundPlaying;
+        });
+
+        // Xử lý khi nhấp vào con bò
+        function onCowClick(event) {
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(cow, true);
+
+            if (intersects.length > 0) {
+                if (!jumpBoost) {
+                    jumpBoost = true;
+                    bounceHeight = boostedJumpHeight;
+
+                    // Phát âm thanh meo meo
+                    if (meowSound.isPlaying) meowSound.stop();
+                    meowSound.play();
+
+                    // Quay lại nhảy bình thường sau 1 giây
+                    setTimeout(() => {
+                        bounceHeight = normalJumpHeight;
+                        jumpBoost = false;
+                    }, 1000);
+                }
+            }
+        }
+
+        // Lắng nghe sự kiện click chuột
+        window.addEventListener("click", onCowClick);
+
+    </script>
+</body>
+</html>
